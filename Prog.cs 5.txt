@@ -1,0 +1,186 @@
+using System;
+using System.Collections.Generic;
+
+namespace PaymentSystemLab
+{
+    // 1. Інтерфейс для типів платежів, які підтримують повернення коштів
+    public interface IRefundable
+    {
+        void Refund();
+    }
+
+    // 2. Базовий абстрактний клас
+    public abstract class Payment
+    {
+        // Властивості, спільні для всіх платежів, загальні характеристики
+       
+        public decimal Amount { get; protected set; } // Уникнення доблювання 
+        public string Description { get; protected set; } // Контроль доступу 
+
+        // Конструктор базового класу
+        protected Payment(decimal amount, string description)
+        {
+            Amount = amount;
+            Description = description; // Бере данні ззовні, зберігає всередині об'єкта
+        }
+
+        // Абстрактний метод 
+        public abstract void ProcessPayment();
+
+        // Віртуальний метод (має базову реалізацію, яку можна перевизначити)
+        public virtual string GetInfo()
+        {
+            return $"Платіж: {Description} | Сума: {Amount:F2} грн.";// повертає готовий рядок із базовою інформацією про платіж
+        }
+    }
+
+    // 3. Підклас: Оплата карткою (Підтримує повернення)
+    // Приймає суму, опис, номер картки
+    public class CardPayment : Payment, IRefundable
+    {
+        public string CardNumber { get; private set; }
+
+        public CardPayment(decimal amount, string description, string cardNumber) // успадковує властивості, реалзовує інтерфейс
+            : base(amount, description)
+        {
+            CardNumber = cardNumber;// записує номер картки в поточний обєкт 
+        }
+
+        // Перевизначення абстрактного методу
+        public override void ProcessPayment()
+        {
+            Console.WriteLine($"[CARD] Обробка транзакції на суму {Amount:F2} грн. по картці {MaskCardNumber()}...");
+            Console.WriteLine("[CARD] Платіж успішно проведено через банк-еквайєр.");
+        }
+
+        // Перевизначення віртуального методу
+        public override string GetInfo()
+        {
+            return base.GetInfo() + $" (Спосіб: Картка, Номер: {MaskCardNumber()})";
+        }
+
+        // Реалізація інтерфейсу IRefundable
+        public void Refund()
+        {
+            Console.WriteLine($"[REFUND] Повернення {Amount:F2} грн. на картку {MaskCardNumber()} виконано.");
+        }
+
+        // Специфічний метод для класу CardPayment (маскування номера)
+        private string MaskCardNumber()
+        {
+            if (CardNumber.Length >= 16)
+                return $"**** **** **** {CardNumber.Substring(12)}";
+            return "****";
+        }
+    }
+
+    // 4. Підклас: Оплата онлайн (Електронний гаманець / Google Pay тощо. Підтримує повернення)
+    public class OnlinePayment : Payment, IRefundable// оголошує новий тип платежу
+    {
+        public string TransactionId { get; private set; }
+        public string PaymentSystemName { get; private set; }//зберігає назву платіжної системи
+
+        public OnlinePayment(decimal amount, string description, string paymentSystemName) 
+            : base(amount, description)
+        {
+            PaymentSystemName = paymentSystemName;
+            TransactionId = Guid.NewGuid().ToString().Substring(0, 8).ToUpper(); // Генерація ID
+        }
+
+        public override void ProcessPayment()
+        {
+            Console.WriteLine($"[ONLINE] Перенаправлення на шлюз {PaymentSystemName}...");
+            Console.WriteLine($"[ONLINE] Авторизація успішна. ID транзакції: {TransactionId}");
+        }
+
+        public override string GetInfo()
+        {
+            return base.GetInfo() + $" (Спосіб: Онлайн-платіж [{PaymentSystemName}], ID: {TransactionId})";
+        }
+
+        public void Refund()
+        {
+            Console.WriteLine($"[REFUND] Запит на повернення надіслано в {PaymentSystemName}. Транзакція {TransactionId} скасована.");
+        }
+    }
+
+    // 5. Підклас: Оплата готівкою (НЕ підтримує повернення автоматично)
+    public class CashPayment : Payment//Оголошує клас для готівкових платежів.
+    {
+        public decimal AmountReceived { get; private set; }
+
+        public CashPayment(decimal amount, string description, decimal amountReceived) 
+            : base(amount, description)
+        {
+            AmountReceived = amountReceived;// приймає параметри, передає потрібну суму та опис у базовий клас
+        }
+
+        public override void ProcessPayment()
+        {
+            Console.WriteLine($"[CASH] Очікування готівки. Внесено: {AmountReceived:F2} грн.");
+            if (AmountReceived >= Amount)
+            {
+                decimal change = AmountReceived - Amount;
+                Console.WriteLine("[CASH] Купюри прийнято.");
+                if (change > 0)
+                {
+                    Console.WriteLine($"[CASH] Решта: {change:F2} грн.");
+                }
+            }
+            else
+            {
+                Console.WriteLine("[CASH] Помилка: Недостатньо коштів!");
+            }
+        }
+
+        public override string GetInfo()
+        {
+            return base.GetInfo() + $" (Спосіб: Готівка, Внесено: {AmountReceived:F2} грн.)";
+        }
+    }
+
+    // Головний клас програми
+    class Program
+    {
+        static void Main(string[] sender)
+        {
+            // Налаштування кодування для коректного відображення української мови в консолі
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+            // Створення списку платежів типу List<Payment> (Поліморфізм)
+            List<Payment> payments = new List<Payment>
+            {
+                new CardPayment(1250.50m, "Покупка смартфону", "4441111122223333"),
+                new CashPayment(200.00m, "Оплата кави та круасана", 200.00m),
+                new OnlinePayment(450.00m, "Підписка на Netflix", "PayPal"),
+                new CashPayment(100.00m, "Квиток у кіно", 200.00m) // Тут буде решта
+            };
+
+            Console.WriteLine("ЕТАП 1: ОБРОБКА ПЛАТЕЖІВ");
+            foreach (var payment in payments)
+            {
+                Console.WriteLine(payment.GetInfo()); // Виклик віртуального методу
+                payment.ProcessPayment();            // Виклик абстрактного методу
+                Console.WriteLine(new string('-', 50));
+            }
+
+            Console.WriteLine("\nЕТАП 2: ПОВЕРНЕННЯ КОШТІВ (якщо можливо)");
+            foreach (var payment in payments)
+            {
+                // Перевірка, чи реалізує поточний об'єкт інтерфейс IRefundable
+                if (payment is IRefundable refundablePayment)
+                {
+                    Console.WriteLine($"Спроба повернення для: {payment.Description}");
+                    refundablePayment.Refund(); // Виклик методу інтерфейсу
+                }
+                else
+                {
+                    Console.WriteLine($"[УВАГА] Для платежу '{payment.Description}' (Готівка) автоматичне повернення неможливе.");
+                }
+                Console.WriteLine(new string('-', 50));
+            }
+
+            Console.ReadLine();
+        }
+    }
+}
